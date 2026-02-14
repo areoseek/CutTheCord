@@ -1,0 +1,16 @@
+{
+  "name": "@ctc/android",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npx cap sync android && cd android && ./gradlew assembleRelease",
+    "sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

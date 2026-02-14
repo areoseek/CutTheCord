@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+packages/desktop/out/
+packages/android/android/app/build/
+packages/android/android/.gradle/
+packages/android/android/capacitor-cordova-android-plugins/build/
+
+# Environment & secrets
+.env
+docker/.env
+*.keystore
+
+# Generated config (created by setup.sh)
+docker/livekit/livekit.yaml
+
+# Uploads
+uploads/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite
+.vite/
+
+# Electron
+*.asar
+
+# Lock files (regenerated per-platform)
+pnpm-lock.yaml

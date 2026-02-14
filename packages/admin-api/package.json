@@ -1,0 +1,25 @@
+{
+  "name": "@ctc/admin-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ctc/shared": "workspace:*",
+    "fastify": "^5.1.0",
+    "@fastify/cors": "^10.0.0",
+    "pg": "^8.13.0",
+    "bcrypt": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "@types/bcrypt": "^5.0.2",
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0"
+  }
+}

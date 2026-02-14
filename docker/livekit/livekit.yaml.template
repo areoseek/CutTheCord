@@ -1,0 +1,14 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50200
+  use_external_ip: true
+  node_ip: __HOST_IP__
+keys:
+  __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__
+logging:
+  level: info
+room:
+  auto_create: true
+  max_participants: 50

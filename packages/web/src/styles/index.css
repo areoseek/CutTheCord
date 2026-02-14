@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Discord-like scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e1f22;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #35363c;
+}
+
+body {
+  margin: 0;
+  background: #313338;
+  color: #dbdee1;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}

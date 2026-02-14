@@ -1,0 +1,47 @@
+# Maintainer: CutTheCord
+pkgname=cutthecord
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Self-hosted Discord clone - Desktop client"
+arch=('x86_64')
+url="https://github.com/yourusername/CutTheCord"
+license=('MIT')
+depends=('electron')
+makedepends=('npm' 'pnpm' 'nodejs')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  pnpm install
+  pnpm --filter @ctc/web build
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  # Install app files
+  install -dm755 "$pkgdir/usr/lib/$pkgname"
+  cp -r packages/desktop/src/* "$pkgdir/usr/lib/$pkgname/"
+  cp -r packages/web/dist "$pkgdir/usr/lib/$pkgname/web"
+
+  # Create launcher script
+  install -dm755 "$pkgdir/usr/bin"
+  cat > "$pkgdir/usr/bin/$pkgname" << 'EOF'
+#!/bin/bash
+exec electron /usr/lib/cutthecord/main.js "$@"
+EOF
+  chmod +x "$pkgdir/usr/bin/$pkgname"
+
+  # Desktop entry
+  install -dm755 "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/$pkgname.desktop" << EOF
+[Desktop Entry]
+Name=CutTheCord
+Comment=Self-hosted Discord clone
+Exec=$pkgname
+Icon=$pkgname
+Type=Application
+Categories=Network;InstantMessaging;
+EOF
+}

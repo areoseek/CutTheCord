@@ -1,0 +1,34 @@
+{
+  "name": "@ctc/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ctc/shared": "workspace:*",
+    "fastify": "^5.1.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/rate-limit": "^10.1.0",
+    "socket.io": "^4.8.0",
+    "pg": "^8.13.0",
+    "ioredis": "^5.4.0",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.7.0",
+    "nanoid": "^5.0.8",
+    "@fastify/multipart": "^9.0.0",
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.7",
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0"
+  }
+}

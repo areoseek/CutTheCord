@@ -1,0 +1,28 @@
+{
+  "name": "cutthecord",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Self-hosted Discord clone",
+  "scripts": {
+    "dev:api": "pnpm --filter @ctc/api dev",
+    "dev:admin-api": "pnpm --filter @ctc/admin-api dev",
+    "dev:web": "pnpm --filter @ctc/web dev",
+    "dev:admin-web": "pnpm --filter @ctc/admin-web dev",
+    "build:shared": "pnpm --filter @ctc/shared build",
+    "build:api": "pnpm --filter @ctc/api build",
+    "build:admin-api": "pnpm --filter @ctc/admin-api build",
+    "build:web": "pnpm --filter @ctc/web build",
+    "build:admin-web": "pnpm --filter @ctc/admin-web build",
+    "build:desktop": "pnpm --filter @ctc/desktop build",
+    "build:all": "pnpm -r build",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d --build",
+    "docker:down": "docker compose -f docker/docker-compose.yml down"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["bcrypt", "electron", "esbuild", "sharp"]
+  }
+}

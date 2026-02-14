@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CutTheCord</string>
+    <string name="title_activity_main">CutTheCord</string>
+    <string name="package_name">com.cutthecord.app</string>
+    <string name="custom_url_scheme">com.cutthecord.app</string>
+</resources>

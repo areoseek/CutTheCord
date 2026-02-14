@@ -1,0 +1,138 @@
+services:
+  # ── PostgreSQL ──
+  ctc-postgres:
+    image: postgres:16-alpine
+    container_name: ctc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ctc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-cutthecord}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - ctc-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ctc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──
+  ctc-redis:
+    image: redis:7-alpine
+    container_name: ctc-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - ctc-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Main API (Fastify + Socket.IO) ──
+  ctc-api:
+    build:
+      context: ..
+      dockerfile: packages/api/Dockerfile
+    container_name: ctc-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ctc}:${POSTGRES_PASSWORD:-changeme_postgres_password}@ctc-postgres:5432/${POSTGRES_DB:-cutthecord}
+      REDIS_URL: redis://ctc-redis:6379
+      JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_at_least_32_chars_long}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-changeme_livekit_secret_at_least_32_chars}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}
+      API_PORT: "4000"
+      HOST: "0.0.0.0"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      ctc-postgres:
+        condition: service_healthy
+      ctc-redis:
+        condition: service_healthy
+    networks:
+      - ctc-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Admin API ──
+  ctc-admin-api:
+    build:
+      context: ..
+      dockerfile: packages/admin-api/Dockerfile
+    container_name: ctc-admin-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ctc}:${POSTGRES_PASSWORD:-changeme_postgres_password}@ctc-postgres:5432/${POSTGRES_DB:-cutthecord}
+      ADMIN_API_PORT: "4001"
+      HOST: "0.0.0.0"
+    depends_on:
+      ctc-postgres:
+        condition: service_healthy
+    networks:
+      - ctc-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4001/admin/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Nginx (reverse proxy + static files) ──
+  ctc-nginx:
+    build:
+      context: ..
+      dockerfile: docker/nginx/Dockerfile
+    container_name: ctc-nginx
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"    # Web client + API
+      - "${ADMIN_PORT:-3001}:3001"  # Admin dashboard
+    depends_on:
+      ctc-api:
+        condition: service_healthy
+      ctc-admin-api:
+        condition: service_healthy
+    networks:
+      - ctc-internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── LiveKit (WebRTC SFU) ──
+  ctc-livekit:
+    image: livekit/livekit-server:latest
+    container_name: ctc-livekit
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-changeme_livekit_secret_at_least_32_chars}
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+
+networks:
+  ctc-internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads_data:
+    driver: local
