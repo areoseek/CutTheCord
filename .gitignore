@@ -15,6 +15,7 @@ docker/.env
 
 # Generated config (created by setup.sh)
 docker/livekit/livekit.yaml
+docker/nginx/certs/
 
 # Uploads
 uploads/

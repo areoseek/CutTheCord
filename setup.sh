@@ -161,20 +161,59 @@ fi
 success "LAN IP: ${HOST_IP}"
 
 EXTERNAL_ACCESS="n"
-LIVEKIT_SCHEME="ws"
 ask "Enable external (WAN) access? (y/N): "
 read -r EXTERNAL_ACCESS
 if [[ "${EXTERNAL_ACCESS,,}" == "y" ]]; then
     ask "Enter WAN IP or domain: "
     read -r WAN_HOST
     [[ -z "${WAN_HOST}" ]] && die "WAN IP/domain cannot be empty."
-    # Use wss:// if it looks like a domain (contains a dot and not just an IP)
-    if [[ "${WAN_HOST}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        LIVEKIT_SCHEME="ws"
-    else
-        LIVEKIT_SCHEME="wss"
+    success "WAN host: ${WAN_HOST}"
+fi
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# 3.5. TLS / HTTPS CONFIGURATION
+# ════════════════════════════════════════════════════════════
+
+printf "${BOLD}── TLS / HTTPS ──${RESET}\n"
+echo ""
+info "HTTPS is required for voice and video calls to work."
+info "Browsers block microphone/camera access on non-HTTPS pages"
+info "(except localhost). A self-signed certificate will be generated"
+info "automatically if you enable HTTPS."
+echo ""
+
+USE_HTTPS="y"
+ask "Enable HTTPS? (Y/n): "
+read -r USE_HTTPS
+USE_HTTPS="${USE_HTTPS:-y}"
+
+if [[ "${USE_HTTPS,,}" != "n" ]]; then
+    USE_HTTPS="y"
+    success "HTTPS enabled — self-signed certificate will be generated"
+else
+    USE_HTTPS="n"
+    echo ""
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    printf "${RED}${BOLD}  WARNING: HTTPS is disabled${RESET}\n"
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    echo ""
+    printf "${RED}  Voice and video calls will NOT work unless you access${RESET}\n"
+    printf "${RED}  CutTheCord via localhost (127.0.0.1).${RESET}\n"
+    echo ""
+    printf "${RED}  Browsers require HTTPS to grant microphone and camera${RESET}\n"
+    printf "${RED}  permissions. This is a browser security requirement,${RESET}\n"
+    printf "${RED}  not a CutTheCord limitation.${RESET}\n"
+    echo ""
+    printf "${RED}  If you need voice/video, re-run setup.sh and choose HTTPS.${RESET}\n"
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    echo ""
+    ask "Continue without HTTPS? (y/N): "
+    read -r CONTINUE_HTTP
+    if [[ "${CONTINUE_HTTP,,}" != "y" ]]; then
+        warn "Setup cancelled. Re-run and choose HTTPS."
+        exit 0
     fi
-    success "WAN host: ${WAN_HOST} (scheme: ${LIVEKIT_SCHEME})"
 fi
 echo ""
 
@@ -292,11 +331,20 @@ echo ""
 # 8. CONFIRMATION
 # ════════════════════════════════════════════════════════════
 
-# Build the LiveKit URL
+# Determine the host used for client-facing URLs
 if [[ "${EXTERNAL_ACCESS,,}" == "y" ]]; then
-    LIVEKIT_URL="${LIVEKIT_SCHEME}://${WAN_HOST}:${LIVEKIT_PORT}"
+    CLIENT_HOST="${WAN_HOST}"
 else
-    LIVEKIT_URL="ws://${HOST_IP}:${LIVEKIT_PORT}"
+    CLIENT_HOST="${HOST_IP}"
+fi
+
+# Build the LiveKit URL
+if [[ "${USE_HTTPS}" == "y" ]]; then
+    WEB_SCHEME="https"
+    LIVEKIT_URL="wss://${CLIENT_HOST}:${WEB_PORT}/livekit/"
+else
+    WEB_SCHEME="http"
+    LIVEKIT_URL="ws://${CLIENT_HOST}:${LIVEKIT_PORT}"
 fi
 
 DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@ctc-postgres:5432/${POSTGRES_DB}"
@@ -311,6 +359,7 @@ printf "    LAN IP:          %s\n" "${HOST_IP}"
 if [[ "${EXTERNAL_ACCESS,,}" == "y" ]]; then
     printf "    WAN host:        %s\n" "${WAN_HOST}"
 fi
+printf "    HTTPS:           %s\n" "$(if [[ "${USE_HTTPS}" == "y" ]]; then echo "enabled (self-signed)"; else echo "DISABLED"; fi)"
 printf "    LiveKit URL:     %s\n" "${LIVEKIT_URL}"
 echo ""
 printf "  ${BOLD}Ports${RESET}\n"
@@ -413,6 +462,196 @@ if [[ "${LIVEKIT_PORT}" != "7880" ]]; then
 fi
 
 success "Written docker/livekit/livekit.yaml"
+
+# ── Generate TLS certificate and nginx config ──
+NGINX_CONF="${DOCKER_DIR}/nginx/nginx.conf"
+CERTS_DIR="${DOCKER_DIR}/nginx/certs"
+
+if [[ "${USE_HTTPS}" == "y" ]]; then
+    # Generate self-signed certificate
+    mkdir -p "${CERTS_DIR}"
+    if [[ ! -f "${CERTS_DIR}/cert.pem" || ! -f "${CERTS_DIR}/key.pem" ]]; then
+        info "Generating self-signed TLS certificate..."
+
+        # Build SAN entries for the certificate
+        SAN_ENTRIES="IP:${HOST_IP},IP:127.0.0.1"
+        if [[ "${EXTERNAL_ACCESS,,}" == "y" ]]; then
+            if [[ "${WAN_HOST}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SAN_ENTRIES="${SAN_ENTRIES},IP:${WAN_HOST}"
+            else
+                SAN_ENTRIES="${SAN_ENTRIES},DNS:${WAN_HOST}"
+            fi
+        fi
+
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout "${CERTS_DIR}/key.pem" \
+            -out "${CERTS_DIR}/cert.pem" \
+            -subj "/CN=CutTheCord" \
+            -addext "subjectAltName=${SAN_ENTRIES}" \
+            2>/dev/null
+        success "TLS certificate generated (valid 365 days)"
+    else
+        success "TLS certificate already exists — keeping existing"
+    fi
+
+    # Write HTTPS nginx.conf with LiveKit proxy
+    cat > "${NGINX_CONF}" << 'NGINXEOF'
+upstream api {
+    server ctc-api:4000;
+}
+
+server {
+    listen 3000 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Serve web client static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Allow avatar uploads
+    client_max_body_size 6m;
+
+    # API proxy
+    location /api/ {
+        proxy_pass http://api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Rate limiting headers
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    # Socket.IO proxy
+    location /socket.io/ {
+        proxy_pass http://api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # LiveKit WebSocket proxy (allows wss:// through nginx)
+    location /livekit/ {
+        proxy_pass http://host.docker.internal:__LIVEKIT_PORT__/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # SPA routing - serve index.html for all non-file routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Gzip
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
+    gzip_min_length 256;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Cache static assets (exclude /api/ paths so they proxy correctly)
+    location ~* ^(?!/api/).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+NGINXEOF
+
+    # Replace LiveKit port placeholder
+    sed -i "s/__LIVEKIT_PORT__/${LIVEKIT_PORT}/g" "${NGINX_CONF}"
+    success "Written HTTPS nginx.conf (with LiveKit proxy)"
+
+else
+    # Write HTTP-only nginx.conf (no LiveKit proxy needed — direct ws:// works from HTTP pages)
+    cat > "${NGINX_CONF}" << 'NGINXEOF'
+upstream api {
+    server ctc-api:4000;
+}
+
+server {
+    listen 3000;
+    server_name _;
+
+    # Serve web client static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Allow avatar uploads
+    client_max_body_size 6m;
+
+    # API proxy
+    location /api/ {
+        proxy_pass http://api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Rate limiting headers
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    # Socket.IO proxy
+    location /socket.io/ {
+        proxy_pass http://api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # SPA routing - serve index.html for all non-file routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Gzip
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
+    gzip_min_length 256;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Cache static assets (exclude /api/ paths so they proxy correctly)
+    location ~* ^(?!/api/).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+NGINXEOF
+
+    success "Written HTTP nginx.conf"
+fi
 echo ""
 
 # ════════════════════════════════════════════════════════════
@@ -438,7 +677,13 @@ echo ""
 printf "${BOLD}── Health Check ──${RESET}\n"
 info "Waiting for services to become healthy (up to 3 minutes)..."
 
-HEALTH_URL="http://localhost:${WEB_PORT}"
+if [[ "${USE_HTTPS}" == "y" ]]; then
+    HEALTH_URL="https://localhost:${WEB_PORT}"
+    CURL_FLAGS="-skf"
+else
+    HEALTH_URL="http://localhost:${WEB_PORT}"
+    CURL_FLAGS="-sf"
+fi
 MAX_WAIT=180
 INTERVAL=5
 ELAPSED=0
@@ -449,7 +694,7 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     idx=$(( (ELAPSED / INTERVAL) % 4 ))
     spin_char="${SPINNER_CHARS:$idx:1}"
 
-    if curl -sf "${HEALTH_URL}" -o /dev/null 2>/dev/null; then
+    if curl ${CURL_FLAGS} "${HEALTH_URL}" -o /dev/null 2>/dev/null; then
         printf "\r${GREEN}✔${RESET} Web client responded after %ds               \n" "$ELAPSED"
         break
     fi
@@ -508,9 +753,14 @@ printf "════════════════════════
 printf "  CutTheCord is running!\n"
 printf "══════════════════════════════════════════════════${RESET}\n"
 echo ""
-printf "  ${BOLD}Web Client:${RESET}      http://%s:%s\n" "${HOST_IP}" "${WEB_PORT}"
+printf "  ${BOLD}Web Client:${RESET}      %s://%s:%s\n" "${WEB_SCHEME}" "${CLIENT_HOST}" "${WEB_PORT}"
 printf "  ${BOLD}Admin Dashboard:${RESET} http://%s:%s\n" "${HOST_IP}" "${ADMIN_PORT}"
 echo ""
+if [[ "${USE_HTTPS}" == "y" ]]; then
+    info "Using a self-signed certificate. Your browser will show a security"
+    info "warning on first visit — click Advanced > Proceed to continue."
+    echo ""
+fi
 printf "  ${BOLD}Admin Login:${RESET}     %s / (the password you set)\n" "${ADMIN_USER}"
 echo ""
 printf "  ${BOLD}Manage:${RESET}\n"
@@ -518,6 +768,20 @@ printf "    ${DIM}docker compose -f %s/docker-compose.yml down${RESET}    # stop
 printf "    ${DIM}docker compose -f %s/docker-compose.yml up -d${RESET}   # start\n"  "${DOCKER_DIR}"
 printf "    ${DIM}docker compose -f %s/docker-compose.yml logs -f${RESET}  # logs\n"  "${DOCKER_DIR}"
 echo ""
+
+# ── HTTP warning at the end ──
+if [[ "${USE_HTTPS}" == "n" ]]; then
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    printf "${RED}${BOLD}  REMINDER: HTTPS is disabled — voice/video will NOT work${RESET}\n"
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    echo ""
+    printf "${RED}  Voice and video calls require HTTPS. Browsers will not grant${RESET}\n"
+    printf "${RED}  microphone or camera access on plain HTTP pages.${RESET}\n"
+    echo ""
+    printf "${RED}  To fix this, re-run setup.sh and choose HTTPS when prompted.${RESET}\n"
+    printf "${RED}${BOLD}══════════════════════════════════════════════════════════════${RESET}\n"
+    echo ""
+fi
 
 # ════════════════════════════════════════════════════════════
 # 14. OPTIONAL APP BUILDS
@@ -570,9 +834,9 @@ if [[ "${BUILD_ANDROID,,}" == "y" ]]; then
     elif [[ -z "${JAVA_HOME:-}" ]]; then
         warn "JAVA_HOME is not set. Install JDK 17+ and set JAVA_HOME."
     else
-        ask "Server URL to bake into APK (e.g. http://${HOST_IP}:${WEB_PORT}): "
+        ask "Server URL to bake into APK (e.g. ${WEB_SCHEME}://${CLIENT_HOST}:${WEB_PORT}): "
         read -r ANDROID_SERVER_URL
-        ANDROID_SERVER_URL="${ANDROID_SERVER_URL:-http://${HOST_IP}:${WEB_PORT}}"
+        ANDROID_SERVER_URL="${ANDROID_SERVER_URL:-${WEB_SCHEME}://${CLIENT_HOST}:${WEB_PORT}}"
 
         CAP_CONFIG="${ANDROID_DIR}/capacitor.config.ts"
         if [[ -f "${CAP_CONFIG}" ]]; then

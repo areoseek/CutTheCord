@@ -100,6 +100,10 @@ services:
     ports:
       - "${WEB_PORT:-3000}:3000"    # Web client + API
       - "${ADMIN_PORT:-3001}:3001"  # Admin dashboard
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       ctc-api:
         condition: service_healthy
@@ -108,7 +112,7 @@ services:
     networks:
       - ctc-internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://127.0.0.1:3000/ || wget -qO- http://127.0.0.1:3000/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
