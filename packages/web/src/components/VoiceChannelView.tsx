@@ -72,7 +72,7 @@ function ParticipantTile({
       {hasVideo && cameraTrack ? (
         <VideoTrack
           trackRef={cameraTrack}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
         />
       ) : (
         <div className="flex flex-col items-center gap-2">

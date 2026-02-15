@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
 import { useVoiceStore } from '../stores/voiceStore';
+import * as api from '../api';
 import type { ServerToClientEvents, ClientToServerEvents } from '@ctc/shared';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -31,6 +32,15 @@ export function useSocket() {
 
     socket.on('connect', () => {
       console.log('Socket connected');
+      // Re-fetch voice participants on reconnect
+      const currentServer = useChatStore.getState().currentServer;
+      if (currentServer) {
+        socket.emit('join-server', currentServer.id, () => {
+          api.getServerVoiceParticipants(currentServer.id)
+            .then((data) => useVoiceStore.getState().loadServerParticipants(data))
+            .catch(console.error);
+        });
+      }
     });
 
     socket.on('new-message', (message) => {
@@ -69,6 +79,10 @@ export function useSocket() {
       } else if (state.action === 'leave') {
         useVoiceStore.getState().removeParticipant(state.channel_id, state.user_id);
       }
+    });
+
+    socket.on('voice-move', ({ channel_id, token, url }) => {
+      useVoiceStore.getState().joinChannel(channel_id, token, url);
     });
 
     socket.on('member-joined', ({ member }) => {

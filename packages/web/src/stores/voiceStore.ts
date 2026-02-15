@@ -22,6 +22,7 @@ interface VoiceStoreState {
 
   joinChannel: (channelId: string, token: string, url: string) => void;
   leaveChannel: () => void;
+  clearParticipants: () => void;
   setParticipant: (state: VoiceState) => void;
   removeParticipant: (channelId: string, userId: string) => void;
   loadServerParticipants: (data: Record<string, Array<{ user_id: string; username: string; muted: boolean; deafened: boolean; video: boolean }>>) => void;
@@ -43,6 +44,7 @@ export const useVoiceStore = create<VoiceStoreState>((set) => ({
     startAndroidVoiceService();
     set({ currentChannelId: channelId, token, url });
   },
+  clearParticipants: () => set({ channelParticipants: new Map() }),
   leaveChannel: () => {
     stopAndroidVoiceService();
     set({

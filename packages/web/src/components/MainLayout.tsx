@@ -56,7 +56,18 @@ export default function MainLayout() {
   useEffect(() => {
     if (!currentServer) return;
     const socket = getSocket();
-    if (socket) socket.emit('join-server', currentServer.id);
+
+    // Clear stale voice participants from the previous server
+    useVoiceStore.getState().clearParticipants();
+
+    // Join socket room first, then fetch voice participants to avoid race condition
+    if (socket) {
+      socket.emit('join-server', currentServer.id, () => {
+        api.getServerVoiceParticipants(currentServer.id)
+          .then((data) => useVoiceStore.getState().loadServerParticipants(data))
+          .catch(console.error);
+      });
+    }
 
     api.getServerChannels(currentServer.id).then((channels) => {
       setChannels(channels);
@@ -66,10 +77,6 @@ export default function MainLayout() {
     }).catch(console.error);
 
     api.getServerMembers(currentServer.id).then(setMembers).catch(console.error);
-
-    api.getServerVoiceParticipants(currentServer.id)
-      .then((data) => useVoiceStore.getState().loadServerParticipants(data))
-      .catch(console.error);
 
     return () => {
       if (socket) socket.emit('leave-server', currentServer.id);

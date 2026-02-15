@@ -122,10 +122,11 @@ export interface ServerToClientEvents {
   'channel-updated': (channel: Channel) => void;
   'channel-deleted': (data: { id: string; server_id: string }) => void;
   'server-updated': (server: Server) => void;
+  'voice-move': (data: { channel_id: string; token: string; url: string }) => void;
 }
 
 export interface ClientToServerEvents {
-  'join-server': (server_id: string) => void;
+  'join-server': (server_id: string, cb?: () => void) => void;
   'leave-server': (server_id: string) => void;
   'join-channel': (channel_id: string) => void;
   'leave-channel': (channel_id: string) => void;
@@ -133,6 +134,7 @@ export interface ClientToServerEvents {
   'typing-start': (channel_id: string) => void;
   'typing-stop': (channel_id: string) => void;
   'voice-state-update': (data: { channel_id: string | null }) => void;
+  'move-user': (data: { user_id: string; channel_id: string }) => void;
 }
 
 // ── Voice ──

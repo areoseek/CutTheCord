@@ -21,6 +21,7 @@ export default function ChannelSidebar() {
   const isAdmin = members.some(m => m.user_id === user?.id && m.role === 'admin');
   const textChannels = channels.filter(c => c.type === 'text');
   const voiceChannels = channels.filter(c => c.type === 'voice');
+  const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
 
   const handleSelectChannel = (channel: Channel) => {
     if (currentChannel?.id === channel.id) {
@@ -99,8 +100,23 @@ export default function ChannelSidebar() {
         {voiceChannels.map(channel => {
           const participantMap = channelParticipants.get(channel.id);
           const participants = participantMap ? Array.from(participantMap.values()) : [];
+          const isDragOver = dragOverChannelId === channel.id;
           return (
-            <div key={channel.id}>
+            <div
+              key={channel.id}
+              onDragOver={isAdmin ? (e) => { e.preventDefault(); setDragOverChannelId(channel.id); } : undefined}
+              onDragLeave={isAdmin ? () => setDragOverChannelId(null) : undefined}
+              onDrop={isAdmin ? (e) => {
+                e.preventDefault();
+                setDragOverChannelId(null);
+                const userId = e.dataTransfer.getData('text/user-id');
+                if (userId) {
+                  const socket = getSocket();
+                  socket?.emit('move-user', { user_id: userId, channel_id: channel.id });
+                }
+              } : undefined}
+              className={`rounded transition-colors ${isDragOver ? 'bg-[#23a55a]/20 ring-1 ring-[#23a55a]' : ''}`}
+            >
               <button
                 onClick={() => handleSelectChannel(channel)}
                 className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm transition ${
@@ -117,7 +133,15 @@ export default function ChannelSidebar() {
               {participants.length > 0 && (
                 <div className="ml-6 mt-0.5 mb-1 space-y-0.5">
                   {participants.map((p) => (
-                    <div key={p.user_id} className="flex items-center gap-2 px-1 py-0.5 text-xs text-[#b5bac1]">
+                    <div
+                      key={p.user_id}
+                      draggable={isAdmin}
+                      onDragStart={isAdmin ? (e) => {
+                        e.dataTransfer.setData('text/user-id', p.user_id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      } : undefined}
+                      className={`flex items-center gap-2 px-1 py-0.5 text-xs text-[#b5bac1] ${isAdmin ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    >
                       <div className="relative flex-shrink-0">
                         <div className="w-5 h-5 rounded-full bg-[#5865f2] flex items-center justify-center text-white text-[10px] font-medium">
                           {(p.username || '?')[0].toUpperCase()}

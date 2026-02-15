@@ -8,6 +8,7 @@ import {
   setTyping, clearTyping,
   joinVoiceChannel, leaveVoiceChannel, getUserVoiceChannel, getVoiceParticipants
 } from '../redis.js';
+import { AccessToken } from 'livekit-server-sdk';
 import { sanitizeHtml, validateMessageContent } from '@ctc/shared';
 import type { JwtPayload } from '../middleware/auth.js';
 import type { ServerToClientEvents, ClientToServerEvents, Message, VoiceState } from '@ctc/shared';
@@ -53,8 +54,9 @@ export function setupSocket(httpServer: HttpServer): SocketServer<ClientToServer
     }
 
     // Join server room
-    socket.on('join-server', (serverId) => {
+    socket.on('join-server', (serverId, cb) => {
       socket.join(`server:${serverId}`);
+      if (typeof cb === 'function') cb();
     });
 
     socket.on('leave-server', (serverId) => {
@@ -160,6 +162,102 @@ export function setupSocket(httpServer: HttpServer): SocketServer<ClientToServer
             video: false,
             action: 'join',
           });
+        }
+      }
+    });
+
+    // Move user between voice channels (admin only)
+    socket.on('move-user', async (data) => {
+      const { user_id, channel_id } = data;
+
+      // Get target channel and its server
+      const targetCh = await queryOne<{ id: string; server_id: string; type: string }>(
+        'SELECT id, server_id, type FROM channels WHERE id = $1',
+        [channel_id]
+      );
+      if (!targetCh || targetCh.type !== 'voice') return;
+
+      // Verify requester is admin on that server
+      const requesterMember = await queryOne<{ role: string }>(
+        'SELECT role FROM server_members WHERE server_id = $1 AND user_id = $2',
+        [targetCh.server_id, user.sub]
+      );
+      if (!requesterMember || requesterMember.role !== 'admin') return;
+
+      // Verify target user is in the same server
+      const targetMember = await queryOne(
+        'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+        [targetCh.server_id, user_id]
+      );
+      if (!targetMember) return;
+
+      // Get target user's current voice channel
+      const currentVoiceCh = await getUserVoiceChannel(user_id);
+      if (!currentVoiceCh) return; // user not in voice
+
+      // Get the target user's username
+      const targetUser = await queryOne<{ username: string }>(
+        'SELECT username FROM users WHERE id = $1',
+        [user_id]
+      );
+      if (!targetUser) return;
+
+      // If already in the target channel, nothing to do
+      if (currentVoiceCh === channel_id) return;
+
+      // Leave old channel
+      await leaveVoiceChannel(currentVoiceCh, user_id);
+      const oldCh = await queryOne<{ server_id: string }>(
+        'SELECT server_id FROM channels WHERE id = $1',
+        [currentVoiceCh]
+      );
+      if (oldCh) {
+        io.to(`server:${oldCh.server_id}`).emit('voice-state', {
+          channel_id: currentVoiceCh,
+          user_id,
+          username: targetUser.username,
+          muted: false,
+          deafened: false,
+          video: false,
+          action: 'leave',
+        });
+      }
+
+      // Join new channel
+      await joinVoiceChannel(channel_id, user_id, targetUser.username);
+      io.to(`server:${targetCh.server_id}`).emit('voice-state', {
+        channel_id,
+        user_id,
+        username: targetUser.username,
+        muted: false,
+        deafened: false,
+        video: false,
+        action: 'join',
+      });
+
+      // Generate LiveKit token for the target user
+      const token = new AccessToken(config.livekit.apiKey, config.livekit.apiSecret, {
+        identity: user_id,
+        name: targetUser.username,
+      });
+      token.addGrant({
+        room: channel_id,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
+      });
+      const jwt_token = await token.toJwt();
+
+      // Find the target user's socket and emit voice-move
+      const allSockets = await io.fetchSockets();
+      for (const s of allSockets) {
+        if ((s.data as any).user?.sub === user_id) {
+          s.emit('voice-move', {
+            channel_id,
+            token: jwt_token,
+            url: config.livekit.url,
+          });
+          break;
         }
       }
     });

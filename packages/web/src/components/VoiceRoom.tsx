@@ -67,6 +67,7 @@ export default function LiveKitWrapper({ children }: { children: ReactNode }) {
 
   return (
     <LiveKitRoom
+      key={currentChannelId}
       token={token}
       serverUrl={url}
       connect={true}
