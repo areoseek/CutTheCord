@@ -3,6 +3,7 @@ import { query, queryOne } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateServerName, validateChannelName } from '@ctc/shared';
 import type { Server, Channel, ServerMemberWithUser } from '@ctc/shared';
+import { getIO } from '../socket/io.js';
 
 export async function serverRoutes(app: FastifyInstance): Promise<void> {
   // List servers the user belongs to
@@ -153,6 +154,7 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
         [request.body.name, request.params.channelId, request.params.id]
       );
       if (!channel) return reply.code(404).send({ error: 'Channel not found' });
+      getIO().to(`server:${request.params.id}`).emit('channel-updated', channel);
       return channel;
     }
   );
@@ -175,6 +177,7 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
         [request.params.channelId, request.params.id]
       );
       if (result.rowCount === 0) return reply.code(404).send({ error: 'Channel not found' });
+      getIO().to(`server:${request.params.id}`).emit('channel-deleted', { id: request.params.channelId, server_id: request.params.id });
       return { success: true };
     }
   );
@@ -227,6 +230,43 @@ export async function serverRoutes(app: FastifyInstance): Promise<void> {
         'INSERT INTO bans (server_id, user_id, reason, banned_by) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
         [request.params.id, request.params.userId, request.body.reason || null, request.user.sub]
       );
+      return { success: true };
+    }
+  );
+
+  // Update member role
+  app.patch<{ Params: { id: string; userId: string }; Body: { role: string } }>(
+    '/api/servers/:id/members/:userId/role',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const member = await queryOne<{ role: string }>(
+        'SELECT role FROM server_members WHERE server_id = $1 AND user_id = $2',
+        [request.params.id, request.user.sub]
+      );
+      if (!member || member.role !== 'admin') {
+        return reply.code(403).send({ error: 'Only server admins can change roles' });
+      }
+
+      if (request.params.userId === request.user.sub) {
+        return reply.code(400).send({ error: 'Cannot change your own role' });
+      }
+
+      const { role } = request.body;
+      if (role !== 'admin' && role !== 'member') {
+        return reply.code(400).send({ error: 'Role must be admin or member' });
+      }
+
+      const result = await query(
+        'UPDATE server_members SET role = $1 WHERE server_id = $2 AND user_id = $3',
+        [role, request.params.id, request.params.userId]
+      );
+      if (result.rowCount === 0) return reply.code(404).send({ error: 'Member not found' });
+
+      getIO().to(`server:${request.params.id}`).emit('member-role-updated', {
+        server_id: request.params.id,
+        user_id: request.params.userId,
+        role: role as any,
+      });
       return { success: true };
     }
   );

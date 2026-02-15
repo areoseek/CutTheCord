@@ -109,6 +109,10 @@ export function useSocket() {
       }
     });
 
+    socket.on('member-role-updated', ({ user_id, role }) => {
+      useChatStore.getState().updateMemberRole(user_id, role);
+    });
+
     socket.on('channel-created', (channel) => {
       useChatStore.getState().addChannel(channel);
     });
@@ -119,6 +123,14 @@ export function useSocket() {
 
     socket.on('channel-deleted', ({ id }) => {
       useChatStore.getState().removeChannel(id);
+    });
+
+    socket.on('message-pinned', (message) => {
+      useChatStore.getState().updateMessage(message);
+    });
+
+    socket.on('message-unpinned', ({ id }) => {
+      useChatStore.getState().unpinMessage(id);
     });
 
     return () => {

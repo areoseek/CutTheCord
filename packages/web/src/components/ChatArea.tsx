@@ -22,6 +22,11 @@ export default function ChatArea() {
   };
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; msg: Message } | null>(null);
+
+  // Check if current user is admin
+  const myMember = members.find(m => m.user_id === user?.id);
+  const isAdmin = myMember?.role === 'admin';
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesTopRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -119,6 +124,35 @@ export default function ChatArea() {
     ? `${typingArray.join(', ')} are typing...`
     : 'Several people are typing...';
 
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [contextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent, msg: Message) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, msg });
+  };
+
+  const handlePin = async () => {
+    if (!contextMenu || !currentChannel) return;
+    const { msg } = contextMenu;
+    setContextMenu(null);
+    try {
+      if (msg.pinned) {
+        await api.unpinMessage(currentChannel.id, msg.id);
+      } else {
+        await api.pinMessage(currentChannel.id, msg.id);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -176,7 +210,10 @@ export default function ChatArea() {
                   <div className="flex-1 h-px bg-[#3f4147]" />
                 </div>
               )}
-              <div className={`group flex gap-4 hover:bg-[#2e3035] px-2 py-0.5 rounded ${isGrouped ? '' : 'mt-4 first:mt-0'}`}>
+              <div
+                onContextMenu={(e) => handleContextMenu(e, msg)}
+                className={`group flex gap-4 hover:bg-[#2e3035] px-2 py-0.5 rounded ${isGrouped ? '' : 'mt-4 first:mt-0'} ${msg.pinned ? 'border-l-2 border-yellow-500/50' : ''}`}
+              >
                 {isGrouped ? (
                   <div className="w-10 flex-shrink-0 flex items-start justify-center">
                     <span className="text-[10px] text-[#949ba4] opacity-0 group-hover:opacity-100">
@@ -197,6 +234,11 @@ export default function ChatArea() {
                       <span className="text-xs text-[#949ba4]">
                         {formatDate(msg.created_at)} at {formatTime(msg.created_at)}
                       </span>
+                      {msg.pinned && (
+                        <svg className="inline w-3 h-3 text-yellow-500/70 ml-1" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2l-2-2z" />
+                        </svg>
+                      )}
                       {msg.edited_at && (
                         <span className="text-[10px] text-[#949ba4]">(edited)</span>
                       )}
@@ -215,6 +257,22 @@ export default function ChatArea() {
       <div className="h-6 px-4 text-xs text-[#b5bac1] flex items-center">
         {typingText}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed bg-[#111214] border border-[#3f4147] rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handlePin}
+            className="w-full text-left px-3 py-1.5 text-sm text-[#dbdee1] hover:bg-[#4752c4] hover:text-white"
+          >
+            {contextMenu.msg.pinned ? 'Unpin Message' : 'Pin Message'}
+          </button>
+        </div>
+      )}
 
       {/* Message input */}
       <form onSubmit={handleSend} className="px-2 sm:px-4 pb-3 sm:pb-6">

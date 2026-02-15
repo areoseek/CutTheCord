@@ -26,7 +26,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       let rows: Message[];
       if (cursor) {
         const result = await query<Message>(
-          `SELECT m.id, m.channel_id, m.author_id, m.content, m.edited_at, m.created_at,
+          `SELECT m.id, m.channel_id, m.author_id, m.content, m.edited_at, m.created_at, m.pinned,
                   u.username as author_username, u.avatar_url as author_avatar_url
            FROM messages m
            JOIN users u ON u.id = m.author_id
@@ -38,7 +38,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
         rows = result.rows;
       } else {
         const result = await query<Message>(
-          `SELECT m.id, m.channel_id, m.author_id, m.content, m.edited_at, m.created_at,
+          `SELECT m.id, m.channel_id, m.author_id, m.content, m.edited_at, m.created_at, m.pinned,
                   u.username as author_username, u.avatar_url as author_avatar_url
            FROM messages m
            JOIN users u ON u.id = m.author_id
@@ -162,6 +162,80 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       );
       if (channel) {
         getIO().to(`server:${channel.server_id}`).emit('message-deleted', { id: request.params.messageId, channel_id: request.params.channelId });
+      }
+
+      return { success: true };
+    }
+  );
+
+  // Pin message (admin only)
+  app.post<{ Params: { channelId: string; messageId: string } }>(
+    '/api/channels/:channelId/messages/:messageId/pin',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const admin = await queryOne(
+        `SELECT 1 FROM channels c
+         JOIN server_members sm ON sm.server_id = c.server_id
+         WHERE c.id = $1 AND sm.user_id = $2 AND sm.role = 'admin'`,
+        [request.params.channelId, request.user.sub]
+      );
+      if (!admin) return reply.code(403).send({ error: 'Admin only' });
+
+      const message = await queryOne<Message>(
+        `WITH updated AS (
+           UPDATE messages SET pinned = true, pinned_by = $1, pinned_at = now()
+           WHERE id = $2 AND channel_id = $3
+           RETURNING *
+         )
+         SELECT u2.id, u2.channel_id, u2.author_id, u2.content, u2.edited_at, u2.created_at, u2.pinned,
+                u.username as author_username, u.avatar_url as author_avatar_url
+         FROM updated u2
+         JOIN users u ON u.id = u2.author_id`,
+        [request.user.sub, request.params.messageId, request.params.channelId]
+      );
+      if (!message) return reply.code(404).send({ error: 'Message not found' });
+
+      const channel = await queryOne<{ server_id: string }>(
+        'SELECT server_id FROM channels WHERE id = $1',
+        [request.params.channelId]
+      );
+      if (channel) {
+        getIO().to(`server:${channel.server_id}`).emit('message-pinned', message);
+      }
+
+      return message;
+    }
+  );
+
+  // Unpin message (admin only)
+  app.delete<{ Params: { channelId: string; messageId: string } }>(
+    '/api/channels/:channelId/messages/:messageId/pin',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const admin = await queryOne(
+        `SELECT 1 FROM channels c
+         JOIN server_members sm ON sm.server_id = c.server_id
+         WHERE c.id = $1 AND sm.user_id = $2 AND sm.role = 'admin'`,
+        [request.params.channelId, request.user.sub]
+      );
+      if (!admin) return reply.code(403).send({ error: 'Admin only' });
+
+      const result = await query(
+        `UPDATE messages SET pinned = false, pinned_by = NULL, pinned_at = NULL
+         WHERE id = $1 AND channel_id = $2`,
+        [request.params.messageId, request.params.channelId]
+      );
+      if (result.rowCount === 0) return reply.code(404).send({ error: 'Message not found' });
+
+      const channel = await queryOne<{ server_id: string }>(
+        'SELECT server_id FROM channels WHERE id = $1',
+        [request.params.channelId]
+      );
+      if (channel) {
+        getIO().to(`server:${channel.server_id}`).emit('message-unpinned', {
+          id: request.params.messageId,
+          channel_id: request.params.channelId,
+        });
       }
 
       return { success: true };

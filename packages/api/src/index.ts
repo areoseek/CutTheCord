@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { config } from './config.js';
-import { pool } from './db.js';
+import { pool, runMigrations } from './db.js';
 import { redis } from './redis.js';
 import { authRoutes } from './routes/auth.js';
 import { serverRoutes } from './routes/servers.js';
@@ -35,6 +35,9 @@ async function main() {
       timestamp: new Date().toISOString(),
     };
   });
+
+  // Run database migrations
+  await runMigrations();
 
   // Routes
   await app.register(authRoutes);

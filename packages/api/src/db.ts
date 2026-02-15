@@ -25,3 +25,13 @@ export async function queryOne<T extends pg.QueryResultRow = any>(
   const result = await pool.query<T>(text, params);
   return result.rows[0] ?? null;
 }
+
+export async function runMigrations(): Promise<void> {
+  // Add pin columns to messages table (idempotent)
+  await pool.query(`
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned_by UUID REFERENCES users(id);
+    ALTER TABLE messages ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;
+  `);
+  console.log('Migrations complete');
+}

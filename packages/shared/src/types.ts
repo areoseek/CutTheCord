@@ -63,6 +63,7 @@ export interface Message {
   content: string;
   edited_at: string | null;
   created_at: string;
+  pinned?: boolean;
   author_username?: string;
   author_avatar_url?: string | null;
 }
@@ -121,6 +122,9 @@ export interface ServerToClientEvents {
   'channel-created': (channel: Channel) => void;
   'channel-updated': (channel: Channel) => void;
   'channel-deleted': (data: { id: string; server_id: string }) => void;
+  'member-role-updated': (data: { server_id: string; user_id: string; role: ServerRole }) => void;
+  'message-pinned': (message: Message) => void;
+  'message-unpinned': (data: { id: string; channel_id: string }) => void;
   'server-updated': (server: Server) => void;
   'voice-move': (data: { channel_id: string; token: string; url: string }) => void;
 }

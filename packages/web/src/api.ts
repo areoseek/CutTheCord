@@ -4,13 +4,15 @@ const BASE = '/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = useAuthStore.getState().token;
+  const headers: Record<string, string> = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  if (options?.body) {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(`${BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
     ...options,
+    headers: { ...headers, ...options?.headers },
   });
 
   if (res.status === 401) {
@@ -64,6 +66,10 @@ export const editMessage = (channelId: string, messageId: string, content: strin
   request<any>(`/channels/${channelId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ content }) });
 export const deleteMessage = (channelId: string, messageId: string) =>
   request<any>(`/channels/${channelId}/messages/${messageId}`, { method: 'DELETE' });
+export const pinMessage = (channelId: string, messageId: string) =>
+  request<any>(`/channels/${channelId}/messages/${messageId}/pin`, { method: 'POST', body: JSON.stringify({}) });
+export const unpinMessage = (channelId: string, messageId: string) =>
+  request<any>(`/channels/${channelId}/messages/${messageId}/pin`, { method: 'DELETE' });
 
 // Invites
 export const getInvite = (code: string) => request<any>(`/invites/${code}`);
@@ -82,6 +88,8 @@ export const kickMember = (serverId: string, userId: string) =>
   request<any>(`/servers/${serverId}/members/${userId}`, { method: 'DELETE' });
 export const banMember = (serverId: string, userId: string, reason?: string) =>
   request<any>(`/servers/${serverId}/bans/${userId}`, { method: 'POST', body: JSON.stringify({ reason }) });
+export const updateMemberRole = (serverId: string, userId: string, role: 'admin' | 'member') =>
+  request<any>(`/servers/${serverId}/members/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
 
 // Voice
 export const getVoiceToken = (channel_id: string) =>

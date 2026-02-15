@@ -27,6 +27,9 @@ interface ChatState {
   removeMember: (userId: string) => void;
   setTyping: (channelId: string, userId: string, username: string) => void;
   clearTyping: (channelId: string, userId: string) => void;
+  updateMemberRole: (userId: string, role: string) => void;
+  pinMessage: (id: string) => void;
+  unpinMessage: (id: string) => void;
   addChannel: (channel: Channel) => void;
   updateChannel: (channel: Channel) => void;
   removeChannel: (id: string) => void;
@@ -91,6 +94,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     next.delete(userId);
     set({ typingUsers: next });
   },
+  updateMemberRole: (userId, role) => set((s) => ({
+    members: s.members.map(m => m.user_id === userId ? { ...m, role: role as any } : m),
+  })),
+  pinMessage: (id) => set((s) => ({
+    messages: s.messages.map(m => m.id === id ? { ...m, pinned: true } : m),
+  })),
+  unpinMessage: (id) => set((s) => ({
+    messages: s.messages.map(m => m.id === id ? { ...m, pinned: false } : m),
+  })),
   addChannel: (channel) => set((s) => ({
     channels: [...s.channels, channel].sort((a, b) => a.position - b.position),
   })),

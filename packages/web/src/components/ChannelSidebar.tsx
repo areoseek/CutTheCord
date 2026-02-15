@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
 import { useVoiceStore } from '../stores/voiceStore';
@@ -22,6 +22,49 @@ export default function ChannelSidebar() {
   const textChannels = channels.filter(c => c.type === 'text');
   const voiceChannels = channels.filter(c => c.type === 'voice');
   const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+
+  // Context menu state
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Channel | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [ctxMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent, channel: Channel) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, channel });
+  };
+
+  const handleRename = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget || !currentServer || !renameValue.trim()) return;
+    try {
+      await api.renameChannel(currentServer.id, renameTarget.id, renameValue.trim());
+      setRenameTarget(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !currentServer) return;
+    try {
+      await api.deleteChannel(currentServer.id, deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleSelectChannel = (channel: Channel) => {
     if (currentChannel?.id === channel.id) {
@@ -71,6 +114,7 @@ export default function ChannelSidebar() {
           <button
             key={channel.id}
             onClick={() => handleSelectChannel(channel)}
+            onContextMenu={(e) => handleContextMenu(e, channel)}
             className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm transition ${
               currentChannel?.id === channel.id
                 ? 'bg-[#404249] text-white'
@@ -119,6 +163,7 @@ export default function ChannelSidebar() {
             >
               <button
                 onClick={() => handleSelectChannel(channel)}
+                onContextMenu={(e) => handleContextMenu(e, channel)}
                 className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-1.5 text-sm transition ${
                   currentChannel?.id === channel.id
                     ? 'bg-[#404249] text-white'
@@ -157,6 +202,86 @@ export default function ChannelSidebar() {
           );
         })}
       </div>
+
+      {/* Channel context menu */}
+      {ctxMenu && (
+        <div
+          ref={ctxRef}
+          className="fixed bg-[#111214] rounded-lg py-1.5 shadow-xl border border-[#1e1f22] z-50 min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button
+            onClick={() => {
+              setRenameTarget(ctxMenu.channel);
+              setRenameValue(ctxMenu.channel.name);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-sm text-[#dbdee1] hover:bg-[#4752c4] hover:text-white rounded-sm mx-0"
+          >
+            Rename Channel
+          </button>
+          <button
+            onClick={() => {
+              setDeleteTarget(ctxMenu.channel);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-sm text-[#f23f42] hover:bg-[#f23f42] hover:text-white rounded-sm mx-0"
+          >
+            Delete Channel
+          </button>
+        </div>
+      )}
+
+      {/* Rename modal */}
+      {renameTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setRenameTarget(null)}>
+          <form
+            onClick={e => e.stopPropagation()}
+            onSubmit={handleRename}
+            className="bg-[#313338] rounded-lg p-6 w-96 shadow-xl"
+          >
+            <h3 className="text-lg font-semibold text-white mb-4">Rename Channel</h3>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-[#b5bac1] uppercase mb-2">Channel Name</label>
+              <input
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                className="w-full bg-[#1e1f22] rounded px-3 py-2 text-white outline-none"
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setRenameTarget(null)} className="text-[#b5bac1] hover:text-white px-4 py-2">
+                Cancel
+              </button>
+              <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDeleteTarget(null)}>
+          <div onClick={e => e.stopPropagation()} className="bg-[#313338] rounded-lg p-6 w-96 shadow-xl">
+            <h3 className="text-lg font-semibold text-white mb-2">Delete Channel</h3>
+            <p className="text-[#b5bac1] mb-4">
+              Are you sure you want to delete <strong className="text-white">#{deleteTarget.name}</strong>? This cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteTarget(null)} className="text-[#b5bac1] hover:text-white px-4 py-2">
+                Cancel
+              </button>
+              <button onClick={handleDelete} className="bg-[#f23f42] hover:bg-[#a12d2f] text-white px-4 py-2 rounded">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create channel modal */}
       {showCreate && (
