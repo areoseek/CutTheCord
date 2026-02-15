@@ -29,7 +29,7 @@
 - 2GB+ RAM, 10GB+ disk
 - Linux recommended (works on macOS/Windows with Docker Desktop)
 
-## Quick Start
+## Debian / WSL Quick Start
 
 ```bash
 git clone https://github.com/areoseek/CutTheCord.git
@@ -37,6 +37,15 @@ cd CutTheCord
 chmod +x setup.sh
 ./setup.sh
 ```
+## ArchLinux Quick Start
+
+```bash
+git clone https://github.com/areoseek/CutTheCord.git
+cd CutTheCord
+chmod +x ArchLinuxSetup.sh
+./ArchLinuxSetup.sh
+```
+
 
 The setup script will walk you through configuration and start all containers automatically.
 
