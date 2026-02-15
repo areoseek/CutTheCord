@@ -5,9 +5,11 @@ import {
   useLocalParticipant,
   useRemoteParticipants,
 } from '@livekit/components-react';
+import { createLocalAudioTrack } from 'livekit-client';
 import { useVoiceStore } from '../stores/voiceStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useNoiseGate } from '../hooks/useNoiseGate';
+import { useRNNoise } from '../hooks/useRNNoise';
 import { getMediaAudioContext } from '../utils/mediaAudioContext';
 
 function VoiceControls() {
@@ -18,18 +20,103 @@ function VoiceControls() {
   const echoCancellation = useSettingsStore((s) => s.echoCancellation);
   const autoGainControl = useSettingsStore((s) => s.autoGainControl);
 
+  // Get processed audio with RNNoise (only when enabled)
+  const { stream: processedStream, isReady, error } = useRNNoise({
+    enabled: noiseSuppression,
+    deviceId: audioInputDeviceId,
+    echoCancellation,
+    autoGainControl,
+  });
+
   // Noise gate hook
   useNoiseGate();
 
-  // Sync mic mute state with LiveKit, using selected device + audio processing constraints
+  // Debug logging
   useEffect(() => {
+    if (error) console.error('[VoiceControls] RNNoise error:', error);
+  }, [error]);
+
+  // When RNNoise is enabled, publish the processed track
+  useEffect(() => {
+    // Only use manual publishing when noise suppression is enabled
+    if (!noiseSuppression) return;
+    if (!isReady || !processedStream) return;
+
+    let mounted = true;
+    let audioTrack: any = null;
+
+    async function publishAudio() {
+      try {
+        // First, unpublish ALL existing audio tracks
+        const existingPubs = Array.from(localParticipant.audioTrackPublications.values());
+        console.log('[VoiceControls] Unpublishing', existingPubs.length, 'existing audio tracks');
+        for (const pub of existingPubs) {
+          if (pub.track) {
+            await localParticipant.unpublishTrack(pub.track);
+          }
+        }
+
+        const tracks = processedStream.getAudioTracks();
+        console.log('[VoiceControls] Stream has', tracks.length, 'audio tracks');
+
+        if (tracks.length === 0) {
+          console.error('[VoiceControls] No audio tracks in stream');
+          return;
+        }
+
+        const mediaTrack = tracks[0];
+        console.log('[VoiceControls] Publishing processed track:', mediaTrack.label, 'readyState:', mediaTrack.readyState);
+
+        // Use the MediaStreamTrack directly
+        await localParticipant.publishTrack(mediaTrack, {
+          name: 'microphone',
+          source: 'microphone' as any,
+        });
+
+        console.log('[VoiceControls] ✓ Track published');
+      } catch (err) {
+        console.error('[VoiceControls] Publish error:', err);
+      }
+    }
+
+    publishAudio();
+
+    return () => {
+      mounted = false;
+      // Unpublish by track name
+      const pub = Array.from(localParticipant.audioTrackPublications.values()).find(
+        p => p.trackName === 'microphone'
+      );
+      if (pub) {
+        console.log('[VoiceControls] Unpublishing track');
+        localParticipant.unpublishTrack(pub.track!).catch(console.error);
+      }
+    };
+  }, [localParticipant, noiseSuppression, isReady, processedStream]);
+
+  // When RNNoise is disabled, use LiveKit's default audio handling
+  useEffect(() => {
+    if (noiseSuppression) return; // RNNoise handles it
+
     const opts: any = {};
     if (audioInputDeviceId) opts.deviceId = audioInputDeviceId;
-    opts.noiseSuppression = noiseSuppression;
     opts.echoCancellation = echoCancellation;
     opts.autoGainControl = autoGainControl;
+    opts.noiseSuppression = false; // Browser NS doesn't work well
+
     localParticipant.setMicrophoneEnabled(!isMuted, opts).catch(console.error);
-  }, [isMuted, localParticipant, audioInputDeviceId, noiseSuppression, echoCancellation, autoGainControl]);
+  }, [noiseSuppression, isMuted, localParticipant, audioInputDeviceId, echoCancellation, autoGainControl]);
+
+  // Handle mute state (for RNNoise mode)
+  useEffect(() => {
+    if (!noiseSuppression) return; // LiveKit handles mute in default mode
+
+    const pubs = Array.from(localParticipant.audioTrackPublications.values());
+    const track = pubs[0]?.track;
+    if (track) {
+      isMuted ? track.mute() : track.unmute();
+    }
+  }, [noiseSuppression, isMuted, localParticipant]);
 
   return null;
 }
@@ -54,6 +141,7 @@ function RemoteVolumeSync() {
 
 export default function LiveKitWrapper({ children }: { children: ReactNode }) {
   const { token, url, currentChannelId } = useVoiceStore();
+  const noiseSuppression = useSettingsStore((s) => s.noiseSuppression);
   const audioCtxRef = useRef<AudioContext | undefined>(undefined);
 
   // Get or create the media AudioContext for webAudioMix
@@ -71,7 +159,7 @@ export default function LiveKitWrapper({ children }: { children: ReactNode }) {
       token={token}
       serverUrl={url}
       connect={true}
-      audio={true}
+      audio={!noiseSuppression} // Only auto-create audio when RNNoise is OFF
       video={false}
       options={{ webAudioMix: audioCtxRef.current }}
       style={{ display: 'contents' }}
