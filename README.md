@@ -6,6 +6,10 @@
 
 ---
 
+> **Warning: Messages are not encrypted.** All text chat messages are stored as plaintext in PostgreSQL. There is no end-to-end encryption or at-rest encryption for message content. Anyone with database access can read all messages. If this is a concern, restrict database access and consider placing the stack behind a VPN.
+
+---
+
 ## Features
 
 - [x] Real-time text chat with message editing and cursor-based pagination
