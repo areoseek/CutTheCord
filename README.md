@@ -1,8 +1,23 @@
 <p align="center">
   <img src="logo.jpg" alt="CutTheCord Logo" width="200">
-  <h1 align="center">CutTheCord</h1>
-  <p align="center">Self-hosted, open-source Discord alternative with voice, video, and text chat.</p>
+  <h1 align="center">CutTheCord (Standalone)</h1>
+  <p align="center">Self-hosted Discord alternative with voice, video, and text chat.</p>
 </p>
+
+---
+
+## Looking for the Matrix version?
+
+There is a newer version of CutTheCord built on the Matrix protocol: **[CutTheCord-Matrix](https://github.com/areoseek/CutTheCord-Matrix)**
+
+The Matrix version uses Synapse, Element, and LiveKit instead of the custom backend in this repo. Here is the short version of why you might want it instead:
+
+- **Encryption.** This standalone version stores all messages as plaintext in the database. The Matrix version supports end-to-end encryption through the Matrix protocol, so messages are encrypted before they ever leave your device.
+- **More clients.** This version only has its own web client, Electron desktop app, and Capacitor Android app. The Matrix version works with any Matrix client out there, like Element on iOS, Android, desktop, and web, plus third-party clients like FluffyChat, Nheko, and SchildiChat. You can pick whatever works best for you on whatever device you have.
+- **Better voice and video.** Both versions use LiveKit, but the Matrix version also includes a TURN server out of the box so calls work even when people are behind firewalls or on different networks. The standalone version needs you to handle that yourself.
+- **Federation.** The Matrix version can optionally talk to other Matrix servers. The standalone version is a closed system.
+
+If you are starting fresh, the Matrix version is the better choice. This standalone version still works and is not going anywhere, but new development is focused on the Matrix version.
 
 ---
 
@@ -32,20 +47,20 @@
 ## Debian / WSL Quick Start
 
 ```bash
-git clone https://github.com/areoseek/CutTheCord.git
-cd CutTheCord
+git clone https://github.com/areoseek/CutTheCord-Standalone.git
+cd CutTheCord-Standalone
 chmod +x setup.sh
 ./setup.sh
 ```
+
 ## ArchLinux Quick Start
 
 ```bash
-git clone https://github.com/areoseek/CutTheCord.git
-cd CutTheCord
+git clone https://github.com/areoseek/CutTheCord-Standalone.git
+cd CutTheCord-Standalone
 chmod +x ArchLinuxSetup.sh
 ./ArchLinuxSetup.sh
 ```
-
 
 The setup script will walk you through configuration and start all containers automatically.
 
@@ -106,9 +121,9 @@ Requires wine if building on Linux.
 
 ## Security Notes
 
-- The admin API (port 3001) has **NO authentication** -- restrict access to LAN or VPN only
-- Change all default passwords before exposing to the internet
-- Consider putting the entire stack behind a VPN for remote access
+- The admin API (port 3001) has **NO authentication**. Restrict access to LAN or VPN only.
+- Change all default passwords before exposing to the internet.
+- Consider putting the entire stack behind a VPN for remote access.
 
 ## Troubleshooting
 
